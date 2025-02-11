@@ -204,6 +204,9 @@
                             if (response.data.hasOwnProperty(currency) && currency.endsWith('_amount')) {
                                 var currencyCode = currency.split('_')[0].toUpperCase() + ' Balance'
                                 var amount = response.data[currency];
+                                if (amount === 0) {
+                                    continue; // Skip this iteration if the amount is 0
+                                }
                                 var backgroundColor = '';
 
                                 // Set background color based on the value of amount

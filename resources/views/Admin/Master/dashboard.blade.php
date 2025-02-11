@@ -240,7 +240,6 @@
                     single_party: 'single_party',
                 },
                 success: function(response) {
-                    console.log(response)
                     if (response.st === 'success') {
                         var bookName = "{{ env('BOOK_NAME') }}";
                         $('.modal-title').html(bookName);

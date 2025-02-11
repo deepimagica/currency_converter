@@ -94,7 +94,9 @@ class MasterController extends Controller
     public function dashboard(Request $request)
     {
         $selectedParties = config('selected_parties.selected_parties');
+        // $requestSelectedParties = $request->has('group_id') && !empty($request->input('group_id')) ? (array) $request->input('group_id') : [];
 
+        // $selectedParties = array_unique(array_merge($selectedParties, $requestSelectedParties));
         if ($request->ajax()) {
             if ($request->has('group_id') && !empty($request->input('group_id'))) {
                 $selectedParties = $request->input('group_id');

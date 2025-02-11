@@ -27,7 +27,7 @@ class AuthController extends Controller
         ]);
         if ($validated) {
             if (Auth::attempt(['user_name' => $req->user_name, 'password' => $req->password])) {
-                return redirect('/party_list');
+                return redirect()->route('dashboard');
             } else {
                 return back()->with('fail', 'Wrong credential');
             }
