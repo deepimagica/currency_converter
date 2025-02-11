@@ -20,6 +20,7 @@ use App\Http\Middleware\Authenticate;
 // });
 Route::controller(AuthController::class)->group(function () {
     Route::get('/', 'login');
+    
     Route::get('/login', 'login')->name('login');
     Route::post('/login', 'login_data');
     Route::get('/change_password_form', 'change_password_form')->name('change_password_form');
