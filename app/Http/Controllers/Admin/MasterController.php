@@ -111,12 +111,11 @@ class MasterController extends Controller
             }
             return $this->getPartyData($selectedParties, $request);
         }
-
         $data['title'] = "dashboard";
         $data['party'] = json_decode(self::getCrparty($request)->getContent(), true);
         $data['selectedParties'] = $selectedParties;
 
-        return view('Admin.Master.dashboard', compact('data'),$data);
+        return view('Admin.Master.dashboard', compact('data'), $data);
     }
 
     private function getPartyData($selectedParties, $request)
@@ -185,7 +184,7 @@ class MasterController extends Controller
         Artisan::call('config:clear');
     }
 
-    //remove existing ids
+    //remove existing ids of config file
     // private function updateSelectedPartiesConfig($selectedParties)
     // {
     //     $configPath = config_path('selected_parties.php');
