@@ -19,7 +19,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use App\Exports\StatementExcelExport;
 use App\Exports\AllStatementExcelExport;
 use Illuminate\Support\Facades\Artisan;
-
+use Illuminate\Support\Facades\Http;
 
 class MasterController extends Controller
 {
@@ -94,6 +94,7 @@ class MasterController extends Controller
     public function dashboard(Request $request)
     {
         $selectedParties = config('selected_parties.selected_parties');
+        // $selectedParties = config('global.selected_parties');
         // $requestSelectedParties = $request->has('group_id') && !empty($request->input('group_id')) ? (array) $request->input('group_id') : [];
 
         // $selectedParties = array_unique(array_merge($selectedParties, $requestSelectedParties));
@@ -185,6 +186,25 @@ class MasterController extends Controller
 
         Artisan::call('config:clear');
     }
+
+    // private function updateSelectedPartiesConfig($selectedParties)
+    // {
+    //     $existingConfig = config('global', []);
+
+    //     $existingParties = $existingConfig['selected_parties'] ?? [];
+
+    //     $updatedParties = array_unique(array_merge($existingParties, $selectedParties));
+
+    //     $existingConfig['selected_parties'] = array_values($updatedParties);
+
+    //     $configPath = config_path('global.php');
+    //     $configData = "<?php\nreturn " . var_export($existingConfig, true) . ";\n";
+
+    //     file_put_contents($configPath, $configData);
+
+    //     Artisan::call('config:clear');
+    // }
+
 
     //remove existing ids of config file
     // private function updateSelectedPartiesConfig($selectedParties)
@@ -423,6 +443,8 @@ class MasterController extends Controller
 
     public function submit_transaction(Request $req)
     {
+        // \Log::info('request', ['dr_amount' => $req->dr_amount]);
+        // \Log::info('request', ['cr_amount' => $req->cr_amount]);
         $rules = array(
             'dr_party' => 'required',
             'cr_party' => 'required',
@@ -436,9 +458,12 @@ class MasterController extends Controller
         } else {
             $drRemain = round($req->dr_amount) - round($req->tras_amount);
             $crRemain = round($req->cr_amount) + round($req->tras_amount);
+            // \Log::info('amount', ['dr_amount' => $req->dr_amount, 'cr_amount' => $req->cr_amount]);
+            // \Log::info('amount', ['amount' => $req->tras_amount, 'drRemain' => $drRemain, 'crRemain' => $crRemain]);
             $type = $req->type;
             $drid = $req->dr_party;
             $crid = $req->cr_party;
+            // \Log::info('dr_id and cr_id', ['drid' => $drid, 'crid' => $crid]);
             $stringtable = "transaction_$type";
             $data = array(
                 'timest' => date('Y-m-d H:i:s'),
@@ -453,6 +478,8 @@ class MasterController extends Controller
             );
             $drdata = $this->checkAmount($type, $drid);
             $crdata = $this->checkAmount($type, $crid);
+            // \Log::info('drdata', ['drdata' => $drdata, 'crdata' =>  $crdata]);
+
             if ($req->dr_amount == $drdata && $req->cr_amount == $crdata) {
                 $insertID = DB::table($stringtable)->insertGetId($data);
                 $retrivedata = DB::table("transaction_$type as t")
@@ -462,6 +489,7 @@ class MasterController extends Controller
                     ->select('t.srn', 'pd.party_name as dr_party', 'pc.party_name as cr_party', 'u.user_name')
                     ->where('t.srn', $insertID)
                     ->first();
+
                 $receipt = array(
                     'srn' => (strtoupper($type) . '_' . strval($insertID)),
                     'date' => date('d-m-Y'),
@@ -472,7 +500,31 @@ class MasterController extends Controller
                     'user' => Auth::User()->user_name,
                     'type' => $type
                 );
+
                 $msg = ['st' => 'success', 'msg' => $receipt];
+                //to send msg in telegram bot in live domain
+                //not worked in local domain
+                //start code
+                // $date  = date('d-m-Y');
+                // $srn = "{$type}_{$insertID}";
+                // $responseMessage =
+                //     "Date: *$date*\n" .
+                //     "Type: *$type*\n";
+
+                // if (!empty($srn)) {
+                //     $responseMessage .= "Srn: *$srn*\n";
+                // }
+
+                // $responseMessage .=
+                //     "Debit Party: *$req->dr_party*\n" .
+                //     "Credit Party: *$req->cr_party*\n" .
+                //     "Amount: *$req->tras_amount*\n" .
+                //     "Note: *$req->note*";
+                // $dr_chatId = DB::table('party')->where('srn', $req->dr_party)->value('ac_number');
+                // $cr_chatId = DB::table('party')->where('srn', $req->cr_party)->value('ac_number');
+                // $this->sendMessageToParty($dr_chatId, "Debit Notification:\n" . $responseMessage);
+                // $this->sendMessageToParty($cr_chatId, "Credit Notification:\n" . $responseMessage);
+                //end code
             } else {
                 $msg = ['st' => 'failed', 'msg' => 'Something went wrong Please try again later!'];
             }
@@ -482,6 +534,7 @@ class MasterController extends Controller
 
     private function checkAmount($type, $request)
     {
+        // \Log::info('request', ['request' => $request]);
         if (!empty($request)) {
             $stringtable = "transaction_$type";
             $data = DB::table($stringtable)
@@ -490,6 +543,8 @@ class MasterController extends Controller
                 ->where('dr_party', $request)
                 ->orWhere('cr_party', $request)
                 ->first();
+
+            // \Log::info('data', ['data' => $data]);
             if (empty($data)) {
                 $result = 0;
             } else {
@@ -504,6 +559,7 @@ class MasterController extends Controller
         } else {
             $result = 0;
         }
+        // \Log::info('result', ['result' => $result]);
         return $result;
     }
 
@@ -907,7 +963,6 @@ class MasterController extends Controller
 
                 $table = "transaction_$req->from_currency";
                 $to_table = "transaction_$req->to_currency";
-
                 $result = $this->utils->getPartyData($table, $req->party);
 
                 if (empty($result)) {
@@ -2002,5 +2057,609 @@ class MasterController extends Controller
                 return response()->json($purchase_avg);
             }
         }
+    }
+
+    //local code
+    // public function handleWebhook(Request $request)
+    // {
+    //     $data = $request->all();
+    //     // \Log::info('webhook_data');
+    //     // \Log::info($data);
+    //     $dir = resource_path('views/webhook/');
+    //     if (!file_exists($dir)) {
+    //         mkdir($dir, 0777, true);
+    //     }
+
+    //     $filePath = $dir . 'webhook_data.json';
+    //     file_put_contents($filePath, json_encode($data, JSON_PRETTY_PRINT));
+
+    //     $message = $request->input('message.text');
+    //     $chatId = $request->input('message.chat.id');
+
+    //     // \Log::info('message_data', ['text' => $message]);
+
+    //     if (!$message) {
+    //         return response()->json(['error' => 'No message received']);
+    //     }
+
+    //     // $parts = explode(' ', $message, 5);
+    //     $parts = array_map('trim', explode(',', $message, 5));
+
+    //     // \Log::info('message_data', ['parts' => $parts]);
+
+    //     if (count($parts) < 5) {
+    //         return response()->json(['error' => 'Invalid message format']);
+    //     }
+
+    //     $type = trim($parts[0]);
+    //     $dr_party = trim($parts[1]);
+    //     $cr_party = trim($parts[2]);
+    //     $tras_amount = (float) trim($parts[3]);
+    //     $note = trim($parts[4]);
+    //     $stringtable = "transaction_$type";
+
+    //     $drid = DB::table('party')->whereRaw('BINARY party_name = ?', [$dr_party])->value('srn');
+
+    //     $crid = DB::table('party')->whereRaw('BINARY party_name = ?', [$cr_party])->value('srn');
+    //     // \Log::info('drpartyData and crpartyData', ['drid' => $drid, 'crid' => $crid]);
+
+    //     $drdata = $this->checkAmount($type, $drid);
+    //     $crdata = $this->checkAmount($type, $crid);
+    //     // \Log::info('drdata', ['drdata' => $drdata, 'crdata' =>  $crdata]);
+
+    //     $drRemain = round($drdata) - round($tras_amount);
+    //     $crRemain = round($crdata) + round($tras_amount);
+    //     // \Log::info('amount', ['drRemain' => $drRemain, 'crRemain' => $crRemain]);
+
+    //     // $drTabledata = DB::table($stringtable)
+    //     // ->select('srn', 'dr_party_balance', 'cr_party_balance', 'dr_party', 'cr_party')
+    //     // ->orderby('srn','DESC')
+    //     // ->where('dr_party',$drid)->first();
+    //     // \Log::info('drTabledata', ['drTabledata' => $drTabledata]);
+
+    //     // $crTabledata = DB::table($stringtable)
+    //     // ->select('srn', 'dr_party_balance', 'cr_party_balance', 'dr_party', 'cr_party')
+    //     // ->orderby('srn','DESC')
+    //     // ->where('cr_party',$crid)->first();
+    //     // \Log::info('crTabledata', ['crTabledata' => $crTabledata]);
+
+
+    //     // $baldata = DB::table($stringtable)
+    //     //     ->select('srn', 'dr_party_balance', 'cr_party_balance', 'dr_party', 'cr_party')
+    //     //     ->orderBy('srn', 'DESC')
+    //     //     ->where(function ($query) use ($drid, $crid) {
+    //     //         $query->where('dr_party', $drid)
+    //     //             ->orWhere('cr_party', $drid)
+    //     //             ->orWhere('dr_party', $crid)
+    //     //             ->orWhere('cr_party', $crid);
+    //     //     })
+    //     //     ->first();
+
+    //     // \Log::info('baldata', ['baldata' => $baldata]);
+
+    //     // $drBalance = 0;
+    //     // $crBalance = 0;
+
+    //     // // Check conditions separately
+    //     // if ($baldata) {
+    //     //     if ($baldata->dr_party == $drid) {
+    //     //         $drBalance = $baldata->dr_party_balance;
+    //     //     }
+    //     //     if ($baldata->cr_party == $drid) {
+    //     //         $crBalance = $baldata->cr_party_balance;
+    //     //     }
+    //     //     if ($baldata->dr_party == $crid) {
+    //     //         $drBalance = $baldata->dr_party_balance;
+    //     //     }
+    //     //     if ($baldata->cr_party == $crid) {
+    //     //         $crBalance = $baldata->cr_party_balance;
+    //     //     }
+    //     // }
+
+    //     // \Log::info('drBalance and crBalance', ['drBalance' => $drBalance, 'crBalance' => $crBalance]);
+
+
+
+    //     $data = [
+    //         'timest' => now(),
+    //         'user_id' => 1,
+    //         'dr_party' => $drid ?: null,
+    //         'cr_party' => $crid ?: null,
+    //         'amount' => $tras_amount,
+    //         'note' => $note,
+    //         'dr_party_balance' => $drRemain,
+    //         'cr_party_balance' => $crRemain,
+    //         'info' => @$request->trans_type == 'commission' ? 5 : 0
+    //     ];
+
+    //     if (!is_null($drdata) && !is_null($crdata)) {
+    //         $insertID = DB::table($stringtable)->insertGetId($data);
+    //         $srn =  $type . '_' . $insertID;
+    //         $msg = ['st' => 'success', 'msg' => 'Data added'];
+    //         // \Log::info('msg', ['msg' => $msg, 'insertID' => $insertID]);
+    //         $message =
+    //             "Type: *$type*\n" .
+    //             "Srn : *$srn*\n" .
+    //             "Debit Party: *$dr_party*\n" .
+    //             "Credit Party: *$cr_party*\n" .
+    //             "Amount: *$tras_amount*\n" .
+    //             "Note: *$note*";
+    //         $this->sendMessageToTelegram($chatId, $message);
+    //         return response()->json(['status' => 'success'], 200);
+    //     } else {
+    //         $msg = ['st' => 'false', 'msg' => 'something wrong'];
+    //         \Log::info('msg', ['msg' => $msg]);
+    //         return response()->json(['status' => 'false'], 200);
+    //     }
+    // }
+
+
+    // public function handleWebhook(Request $request)
+    // {
+    //     try {
+    //         $data = $request->all();
+    //         // \Log::info('webhook_data', $data);
+
+    //         $dir = resource_path('views/webhook/');
+    //         if (!file_exists($dir)) {
+    //             mkdir($dir, 0777, true);
+    //         }
+
+    //         $filePath = $dir . 'webhook_data.json';
+    //         file_put_contents($filePath, json_encode($data, JSON_PRETTY_PRINT));
+
+    //         $message = $request->input('message.text');
+    //         $chatId = $request->input('message.chat.id');
+
+    //         if (!$message) {
+    //             // throw new \Exception('No message received');
+    //             \Log::info('No message received');
+    //         }
+
+    //         $parts = array_map('trim', explode(',', $message, 5));
+    //         if (count($parts) < 5) {
+    //             \Log::info('Invalid message format');
+    //             // throw new \Exception('Invalid message format');
+    //         }
+
+    //         $type = $parts[0];
+    //         $dr_party = (float) $parts[1];
+    //         $cr_party = (float) $parts[2];
+    //         $tras_amount = (float) $parts[3];
+    //         $note = $parts[4];
+    //         $stringtable = "transaction_$type";
+
+    //         // $drid = DB::table('party')->where('ac_number', $dr_party)->value('srn');
+    //         // $crid = DB::table('party')->where('ac_number', $cr_party)->value('srn');
+
+    //         $drid = DB::table('party')->where('ac_number', $dr_party)->value('srn') ?? '';
+    //         $crid = DB::table('party')->where('ac_number', $cr_party)->value('srn') ?? '';
+
+    //         // if (!$drid || !$crid) {
+    //         //     \Log::info('Invalid debit or credit party, skipping transaction.');
+    //         // }
+
+    //         $drdata = $this->checkAmount($type, $drid);
+    //         $crdata = $this->checkAmount($type, $crid);
+
+    //         if (is_null($drdata) || is_null($crdata)) {
+    //             \Log::info('Invalid debit or credit party');
+    //             // throw new \Exception('Invalid debit or credit party');
+    //         }
+
+    //         $drRemain = round($drdata) - round($tras_amount);
+    //         $crRemain = round($crdata) + round($tras_amount);
+
+    //         $date = now()->format('Y-m-d');
+
+    //         // $data = [
+    //         //     'timest' => $date,
+    //         //     'user_id' => 1,
+    //         //     'dr_party' => $drid ?: null,
+    //         //     'cr_party' => $crid ?: null,
+    //         //     'amount' => $tras_amount,
+    //         //     'note' => $note,
+    //         //     'dr_party_balance' => $drRemain,
+    //         //     'cr_party_balance' => $crRemain,
+    //         //     'info' => $request->trans_type == 'commission' ? 5 : 0,
+    //         // ];
+
+    //         // $insertID = DB::table($stringtable)->insertGetId($data);
+
+    //         if ($drid && $crid && $tras_amount > 0 && $note && isset($type, $date)) {
+    //             $data = [
+    //                 'timest' => $date,
+    //                 'user_id' => 1,
+    //                 'dr_party' => $drid,
+    //                 'cr_party' => $crid,
+    //                 'amount' => $tras_amount,
+    //                 'note' => $note,
+    //                 'dr_party_balance' => $drRemain,
+    //                 'cr_party_balance' => $crRemain,
+    //                 'info' => $request->trans_type == 'commission' ? 5 : 0,
+    //             ];
+
+    //             $insertID = DB::table($stringtable)->insertGetId($data);
+
+    //             if ($insertID) {
+    //                 $srn = "{$type}_{$insertID}";
+    //                 \Log::info('Data Inserted', ['srn' => $srn]);
+    //             }
+    //         }
+
+    //         // $srn = "{$type}_{$insertID}";
+
+    //         // $message =
+    //         //     "Date : *$date*\n" .
+    //         //     "Type: *$type*\n" .
+    //         //     "Srn: *$srn*\n" .
+    //         //     "Debit Party: *$dr_party*\n" .
+    //         //     "Credit Party: *$cr_party*\n" .
+    //         //     "Amount: *$tras_amount*\n" .
+    //         //     "Note: *$note*";
+
+    //         // $this->sendMessageToTelegram($chatId, $message);
+
+    //         $message =
+    //             "Date: *$date*\n" .
+    //             "Type: *$type*\n";
+
+    //         if (!empty($srn)) {
+    //             $message .= "Srn: *$srn*\n";
+    //         }
+
+    //         $message .=
+    //             "Debit Party: *$dr_party*\n" .
+    //             "Credit Party: *$cr_party*\n" .
+    //             "Amount: *$tras_amount*\n" .
+    //             "Note: *$note*";
+
+
+    //         $this->sendMessageToTelegram($chatId, $message);
+    //         $this->sendMessageToParty($dr_party, "Debit Notification:\n" . $message);
+
+    //         return response()->json(['status' => 'success'], 200);
+    //     } catch (\Exception $e) {
+    //         return response()->json(['status' => 'false', 'error' => $e->getMessage()], 400);
+    //     }
+    // }
+
+    public function handleWebhook(Request $request)
+    {
+        $data = $request->all();
+        //\Log::info('Webhook received', $data);
+
+        $result = $this->processWebhookData($data);
+        $webhookData = $this->storeWebhookData($data);
+        return response()->json(['status' => 'success'], 200);
+    }
+
+
+    public function processWebhookData($data)
+    {
+        try {
+            $dir = resource_path('views/webhook/');
+            if (!file_exists($dir)) {
+                mkdir($dir, 0777, true);
+            }
+            file_put_contents($dir . 'webhook_data.json', json_encode($data, JSON_PRETTY_PRINT));
+
+            // Extract message and chat ID
+            $message = $data['message']['text'] ?? null;
+            $chatId = $data['message']['chat']['id'] ?? null;
+
+            if (!$message) {
+                \Log::info('No message received');
+                // return ['status' => 'false', 'error' => 'No message received'];
+            }
+
+            // Extract transaction details
+            $parts = array_map('trim', explode(',', $message, 5));
+            if (count($parts) < 5) {
+                \Log::info('Invalid message format');
+                // return ['status' => 'false', 'error' => 'Invalid message format'];
+            }
+
+            $type = $parts[0];
+            $dr_party = (float) $parts[1];
+            $cr_party = (float) $parts[2];
+            $tras_amount = (float) $parts[3];
+            $note = $parts[4];
+            $stringtable = "transaction_$type";
+
+            // Fetch party IDs
+            $drid = DB::table('party')->where('ac_number', $dr_party)->value('srn') ?? '';
+            $crid = DB::table('party')->where('ac_number', $cr_party)->value('srn') ?? '';
+
+            $drdata = $this->checkAmount($type, $drid);
+            $crdata = $this->checkAmount($type, $crid);
+
+            // if (is_null($drdata) || is_null($crdata)) {
+            //     \Log::info('Invalid debit or credit party');
+            //     return ['status' => 'false', 'error' => 'Invalid debit or credit party'];
+            // }
+
+            // Calculate new balances
+            $drRemain = round($drdata) - round($tras_amount);
+            $crRemain = round($crdata) + round($tras_amount);
+            $date = now()->format('Y-m-d');
+
+            if ($drid && $crid && $tras_amount > 0 && $note) {
+                $transactionData = [
+                    'timest' => $date,
+                    'user_id' => 1,
+                    'dr_party' => $drid,
+                    'cr_party' => $crid,
+                    'amount' => $tras_amount,
+                    'note' => $note,
+                    'dr_party_balance' => $drRemain,
+                    'cr_party_balance' => $crRemain,
+                    'info' => ($data['trans_type'] ?? '') === 'commission' ? 5 : 0,
+                ];
+
+                $insertID = DB::table($stringtable)->insertGetId($transactionData);
+
+                if ($insertID) {
+                    $srn = "{$type}_{$insertID}";
+                }
+            }
+
+            $responseMessage =
+                "Date: *$date*\n" .
+                "Type: *$type*\n";
+
+            if (!empty($srn)) {
+                $responseMessage .= "Srn: *$srn*\n";
+            }
+
+            $responseMessage .=
+                "Debit Party: *$dr_party*\n" .
+                "Credit Party: *$cr_party*\n" .
+                "Amount: *$tras_amount*\n" .
+                "Note: *$note*";
+
+            $this->sendMessageToTelegram($chatId, $responseMessage);
+            $this->sendMessageToParty($dr_party, "Debit Notification:\n" . $responseMessage);
+            $this->sendMessageToParty($cr_party, "Credit Notification:\n" . $responseMessage);
+
+            return ['status' => 'success'];
+        } catch (\Exception $e) {
+            \Log::error('Error processing webhook data', ['error' => $e->getMessage()]);
+            return ['status' => 'false', 'error' => $e->getMessage()];
+        }
+    }
+
+    public function storeWebhookData($data)
+    {
+        try {
+            $chatId = $data['message']['chat']['id'] ?? null;
+            $message = $data['message']['text'] ?? null;
+            $rawData = json_encode($data);
+
+            DB::table('webhook_data')->insert([
+                'chat_id' => $chatId,
+                'message' => $message,
+                'data' => $rawData,
+                'created_at' => now(),
+            ]);
+
+            \Log::info('Webhook data stored successfully.');
+            return true;
+        } catch (\Exception $e) {
+            \Log::error('Error storing webhook data', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    public function getWebhookData()
+    {
+        $webhookData = DB::table('webhook_data')
+            ->select('id', 'chat_id', 'message', 'data', 'created_at')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'created_at' => \Carbon\Carbon::parse($item->created_at)->format('Y-m-d'),
+                    // 'id' => $item->id,
+                    'chat_id' => $item->chat_id,
+                    'message' => $item->message,
+                    'raw_data' => json_decode($item->data, true),
+                ];
+            });
+
+        return view('webhook.webhook_data', compact('webhookData'));
+    }
+
+
+    //live code
+    // public function handleWebhook(Request $request)
+    // {
+    //       $data = $request->all();
+    //       \Log::info('webhook_data');
+    //       \Log::info($data);
+
+    //      $dir = resource_path('views/webhook/');
+    //     if (!file_exists($dir)) {
+    //         mkdir($dir, 0777, true);
+    //     }
+
+    //     $filePath = $dir . 'webhook_data.json';
+    //     file_put_contents($filePath, json_encode($data, JSON_PRETTY_PRINT));
+
+    //     $message = $request->input('message.text');
+    //     $chatId = $request->input('message.chat.id');
+
+    //     // \Log::info('message_data', ['text' => $message]);
+
+
+    //     if (!$message) {
+    //         return response()->json(['error' => 'No message received']);
+    //     }
+
+    //     // $parts = explode(' ', $message, 5);
+    //     $parts = array_map('trim', explode(',', $message, 5));
+
+    //     // \Log::info('message_data', ['parts' => $parts]);
+
+    //     if (count($parts) < 5) {
+    //         return response()->json(['error' => 'Invalid message format']);
+    //     }
+
+    //     $type = trim($parts[0]);
+    //   // \Log::info('type', ['type' => $type]);
+    //     $dr_party = (float) trim($parts[1]);
+    //     $cr_party = (float) trim($parts[2]);
+    //     $tras_amount = (float) trim($parts[3]);
+    //     $note = trim($parts[4]);
+    //     $stringtable = "transaction_$type";
+
+    //     $drid = DB::table('party')->where('ac_number',[$dr_party])->value('srn');
+
+    //     $crid = DB::table('party')->where('ac_number',[$cr_party])->value('srn');
+    //     \Log::info('drid and crid', ['drid' => $drid, 'crid' => $crid]);
+
+    //     $drdata = $this->checkAmount($type, $drid);
+    //     $crdata = $this->checkAmount($type, $crid);
+    //     //\Log::info('drdata', ['drdata' => $drdata, 'crdata' =>  $crdata]);
+
+    //     $drRemain = round($drdata) - round($tras_amount);
+    //     $crRemain = round($crdata) + round($tras_amount);
+    //     // \Log::info('amount', ['drRemain' => $drRemain, 'crRemain' => $crRemain]);
+
+    //     $data = [
+    //         'timest' => now(),
+    //         'user_id' => 1,
+    //         'dr_party' => $drid ?: null,
+    // 		'cr_party' => $crid ?: null,
+    //         'amount' => $tras_amount,
+    //         'note' => $note,
+    //         'dr_party_balance' => $drRemain,
+    //         'cr_party_balance' => $crRemain,
+    //         'info' => @$request->trans_type == 'commission' ? 5 : 0
+    //     ];
+
+    //     if (!is_null($drdata) && !is_null($crdata)) {
+    //         $insertID = DB::table($stringtable)->insertGetId($data);
+    //         $srn =  $type.'_'.$insertID;
+    //         $msg = ['st' => 'success', 'msg' => 'Data added'];
+    //         // \Log::info('msg', ['msg' => $msg, 'insertID' => $insertID]);
+    //         $message =
+    //             "Type: *$type*\n" .
+    //            "Srn : *$srn*\n" .
+    //             "Debit Party: *$dr_party*\n" .
+    //             "Credit Party: *$cr_party*\n" .
+    //             "Amount: *$tras_amount*\n" .
+    //             "Note: *$note*";
+    //         $this->sendMessageToTelegram($chatId, $message);
+    //        return response()->json(['status' => 'success'], 200);
+    //     } else {
+    //         $msg = ['st' => 'false', 'msg' => 'something wrong'];
+    //        return response()->json(['status' => 'false'], 200);
+    //         \Log::info('msg', ['msg' => $msg]);
+    //     }
+    // }
+
+
+    public function sendMessageToTelegram($chatId, $message)
+    {
+        $botToken = $_ENV['DEEP_TELEGRAM_BOT_TOKEN'];
+
+        $response = Http::post("https://api.telegram.org/bot$botToken/sendMessage", [
+            'chat_id' => $chatId,
+            'text' => $message,
+            'parse_mode' => 'Markdown',
+        ]);
+
+        if ($response->successful()) {
+            // \Log::info('Telegram message sent', ['response' => $response->json()]);
+        } else {
+            \Log::error('Failed to send Telegram message', ['response' => $response->body()]);
+        }
+    }
+
+    public function sendMessageToParty($ac_number, $message)
+    {
+        $botToken = $_ENV['DEEP_TELEGRAM_BOT_TOKEN'];
+
+        $chatId = DB::table('party')->where('ac_number', $ac_number)->value('chat_id');
+
+        if (!$chatId) {
+            \Log::error("No chat_id found for party with ac_number: $ac_number");
+        }
+
+        $response = Http::post("https://api.telegram.org/bot$botToken/sendMessage", [
+            'chat_id' => $chatId,
+            'text' => $message,
+            'parse_mode' => 'Markdown',
+        ]);
+
+        if ($response->successful()) {
+            \Log::info("Message sent to party: $ac_number", ['chat_id' => $chatId]);
+            return true;
+        } else {
+            \Log::error('Failed to send Telegram message', ['response' => $response->body()]);
+            return false;
+        }
+    }
+
+    public function webhookData(Request $request)
+    {
+        if ($request->ajax()) {
+            $data = DB::table('webhook_data')
+                ->select('id', 'chat_id', 'message', 'data', 'created_at')
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            return Datatables::of($data)
+                ->editColumn('created_at', function ($row) {
+                    return Carbon::parse($row->created_at)->format('Y-m-d');
+                })
+                ->addColumn('view', function ($row) {
+                    return '<button class="btn btn-info btn-sm" onclick="viewData(' . $row->id . ')"><i class="fa fa-eye" aria-hidden="true"></i></button>';
+                })
+                ->rawColumns(['view'])
+                ->make(true);
+        }
+        $data['title'] = "webhook";
+        return view('Admin.Master.webhook_data_admin', compact('data'), $data);
+    }
+
+    public function viewWebhookData(Request $request)
+    {
+        $id = $request->id;
+        $data = DB::table('webhook_data')
+            ->select('id', 'chat_id', 'message', 'data', 'created_at')
+            ->where('id', $id)->first();
+
+        if (!$data) {
+            return response()->json(['error' => 'Data not found'], 404);
+        }
+      
+        $data->created_at = $data->created_at ? Carbon::parse($data->created_at)->format('Y-m-d') : null;
+
+        $data->data = !empty($data->data) ? json_decode($data->data, true) : [];
+      
+        return response()->json($data);
+    }
+
+    public function getFullWebhookData()
+    {
+        $dir = resource_path('views/webhook/');
+        if (!file_exists($dir)) {
+            mkdir($dir, 0777, true);
+        }
+
+        $filePath = $dir . 'webhook_data.json';
+
+        $existingData = file_exists($filePath) ? json_decode(file_get_contents($filePath), true) : [];
+
+        if (!is_array($existingData)) {
+            $existingData = [];
+        }
+
+        $data['received_at'] = now()->toDateTimeString();
+        $existingData[] = $data;
+
+        file_put_contents($filePath, json_encode($existingData, JSON_PRETTY_PRINT));
     }
 }

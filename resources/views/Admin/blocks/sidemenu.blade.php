@@ -67,6 +67,10 @@
                 <a class="nav-link" href="{{ url('/statement_checkup') }}"><i class="far fa-check-circle"></i><span
                         class="sidemenu-label">Statement Checkup</span></a>
             </li>
+            <li class="nav-item {{ @$title == 'webhook' ? 'active' : '' }}">
+                <a class="nav-link" href="{{ route('webhook.data') }}"><i class="fas fa-exchange"></i><span
+                        class="sidemenu-label">Webhook</span></a>
+            </li>
         </ul>
     </div>
 </div>

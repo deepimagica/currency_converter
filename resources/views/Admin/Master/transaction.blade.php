@@ -397,12 +397,20 @@
                             </div>
                         </div>
                         <br>
+                         <div style="margin-top:10px;">
+                            <div class="custom-swal" style="font-size: 22px;">
+                                <div class="custom-swal-icon">
+                                    <i class="fa-regular fa-circle-check fa-shake fa-lg" style="color:green;"></i>
+                                </div>
+                                <div class="custom-content">{{ strtoupper($type) }} txn : ${bookName}</div>
+                            </div>
+                        </div>
                         <div style="text-align:-webkit-center;font-size:15px; display: flex;justify-content:start;margin-top: 22px;">
                             <i class="fa-solid fa-copy" style="cursor:pointer; color:green; margin-right:20px; font-size:20px;" onclick="copyTable('table2')"></i>
                             <div id="table2">
                                 <table border="1">
                                     <tr><td style="padding:10px;">Srn Number</td><td style="padding:10px;">:</td><td style="padding:10px;">${response.msg.srn}</td><td rowspan="2"></td><td style="padding:10px;">${response.msg.date}</td></tr>
-                                    <tr><td style="padding:10px;">Dr Party</td><td style="padding:10px;">:</td><td style="padding:10px;">${response.msg.cr_party}</td><td style="text-align:right;">${response.msg.amount}</td></tr>
+                                    <tr><td style="padding:10px;">Cr Party</td><td style="padding:10px;">:</td><td style="padding:10px;">${response.msg.cr_party}</td><td style="text-align:right;">${response.msg.amount}</td></tr>
                                     <tr><td style="padding:10px;">User Notes</td><td style="padding:10px;">:</td><td style="padding:10px;" colspan="4">${response.msg.note}</td></tr>
                                     <tr><td style="padding:10px;">User Name</td><td style="padding:10px;">:</td><td style="padding:10px;" colspan="4">${response.msg.user}</td></tr>
                                 </table>
@@ -455,6 +463,7 @@
 
         function drparty(data) {
             var id = data.value;
+            
             var type = $('#type').val();
             $.ajax({
                 url: "{{ url('getAmount') }}",

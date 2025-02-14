@@ -81,9 +81,6 @@
                             </div>
                         </div>
                         <div class="modal-footer">
-                            {{-- <button class="btn btn-primary" id="save_data" type="submit" value="Submit"
-                                onclick="captureScreenshot()">Take Screenshot
-                            </button> --}}
                             <button class="btn btn-primary" id="save_data" type="submit"
                                 onclick="copyTableContent('tableData')">Copy
                             </button>
@@ -256,6 +253,9 @@
                             if (response.data.hasOwnProperty(currency) && currency.endsWith('_amount')) {
                                 var currencyCode = currency.split('_')[0].toUpperCase() + ' Balance'
                                 var amount = response.data[currency];
+                                if (amount === 0) {
+                                    continue;
+                                }
                                 var backgroundColor = '';
 
                                 // Set background color based on the value of amount

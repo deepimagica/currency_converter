@@ -70,7 +70,10 @@ Route::middleware([Authenticate::class])->group(function () {
         Route::post('/getPartyBal', 'getPartyBal');
 
         Route::post('/delete_entry', 'delete_entry');
+        Route::get('/webhook', 'webhookData')->name('webhook.data');
+        Route::get('/viewWebhookData', 'viewWebhookData')->name('webhook.data.view');
     });
 });
 
 Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home');
+Route::get('/webhook-data', [MasterController::class, 'getWebhookData']);
