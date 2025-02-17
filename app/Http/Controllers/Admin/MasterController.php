@@ -957,6 +957,7 @@ class MasterController extends Controller
         } else {
             $get_exch = $this->utils->getExchParty(Auth::User()->user_name);
 
+
             if (!empty($get_exch)) {
                 $ExchSrn = $get_exch[0]->srn;
                 $ConversionInfo = $this->utils->getConversionInfo($req->from_currency, $req->to_currency, $req->from_amount, $req->to_amount);
@@ -1079,6 +1080,21 @@ class MasterController extends Controller
                     $msg = array("st" => "failed", "msg" => "Failed");
                 }
                 if ($from_insert && $to_insert) {
+                    $chatId = DB::table('party')->where('srn', $req->party)->value('chat_id');
+                    $bookName = $_ENV['BOOK_NAME'];
+                    $message = "*Sell {$req->from_currency} & Buy {$req->to_currency} : $bookName 
+                    Srn: {$receipt['from_srn']}   {$receipt['date']}
+                    Party: {$receipt['party']}  Amount = {$receipt['from_amount']}
+                    Notes: {$receipt['note']}
+                    User: {$receipt['user']}
+                    
+                    Sell {$req->to_currency} & Buy {$req->from_currency} : $bookName 
+                    Srn: {$receipt['to_srn']}   {$receipt['date']}
+                    Party: {$receipt['party']}  Amount = {$receipt['amount']}
+                    Notes: {$receipt['note']}
+                    User: {$receipt['user']} *";
+
+                    $this->sendMessageToTelegram($chatId, $message);
                     $msg = array("st" => "success", "msg" => $receipt);
                 }
             } else {
@@ -2153,6 +2169,16 @@ class MasterController extends Controller
                 return response()->json(['status' => 'balance_sent'], 200);
             }
 
+            if (str_contains($message, 'find')) {
+                $parts = array_map('trim', explode(',', $message));
+                if (count($parts) == 2 && !empty($parts[1])) {
+                    $name = $parts[1];
+                    //$this->getInfoByName($name);
+                    $this->dispatchAsync(fn() => $this->getInfoByName($name, $chatId), 'getInfoByName');
+                    return response()->json(['status' => 'info_requested'], 200);
+                }
+            }
+
             $message = trim($message);
 
             if (str_contains($message, ',')) {
@@ -2207,8 +2233,9 @@ class MasterController extends Controller
 
     //         $party = DB::table('party')
     //             ->where('chat_id', $chatId)
-    //             ->select('srn')
+    //             ->select('srn','ac_number')
     //             ->first();
+
 
     //         $currencyType = $parts[0];
     //         $type = substr($currencyType, 2);
@@ -2217,39 +2244,51 @@ class MasterController extends Controller
     //         $note = $parts[3];
     //         $stringtable = "transaction_$type";
 
-    //         $second_party = DB::table('party')->where('ac_number', $second_party)->value('srn') ?? '';
-
+    //         $second_party = DB::table('party')->where('ac_number', $second_party)->select('srn','ac_number')->first();
 
     //         if (str_starts_with($currencyType, 'cr')) {
     //             $crid = $party->srn;
-    //             $drid = $second_party;
+    //             $drid = $second_party->srn;
     //         } else {
     //             $drid = $party->srn;
-    //             $crid = $second_party;
+    //             $crid = $second_party->srn;
     //         }
+
+    //         $msg_crparty = $party->ac_number;
+    //         $msg_drparty = $second_party->ac_number;
 
     //         \Log::info("Transaction Stored: Type=$type, CR=$crid, DR=$drid, Amount=$tras_amount, Note=$note");
 
-    //         \Log::info('dr_id:' . $drid);
-    //         \Log::info('cr_id:' . $crid);
+    //         \Log::info('dr_id: ' . ($drid ?? 'N/A'));
+    //         \Log::info('cr_id: ' . ($crid ?? 'N/A'));
 
     //         $recentTransaction = DB::table($stringtable)
     //             ->where(function ($query) use ($drid, $crid) {
-    //                 $query->where('dr_party', $drid)
-    //                     ->orWhere('cr_party', $crid);
+    //                 $query->where('dr_party', $drid)->where('cr_party', $crid)
+    //                     ->orWhere('dr_party', $crid)->where('cr_party', $drid);
     //             })
     //             ->where('amount', $tras_amount)
-    //             ->where('timest', '>=', now()->subMinutes(10))
+    //             ->where('timest', '>=', now()->subMinutes(10)->toDateTimeString()) 
     //             ->first();
 
 
     //         \Log::info('recentTransaction:', (array) $recentTransaction);
 
-
     //         if ($recentTransaction) {
-    //             $timeRemaining = 10 - now()->diffInMinutes($recentTransaction->timest);
-    //             $this->sendMessageToTelegram($chatId, "Please wait for $timeRemaining minutes before sending another same transaction.");
-    //             return ['status' => 'success'];
+    //             $transactionTime = Carbon::parse($recentTransaction->timest)->startOfMinute();
+    //             $timePassed = now()->startOfMinute()->diffInMinutes($transactionTime);
+
+    //             \Log::info($transactionTime);
+    //             \Log::info($timePassed);
+
+    //             \Log::info("Recent transaction found. Time passed: $timePassed minutes");
+
+    //             if ($timePassed < 10) {
+    //                 $timeRemaining = 10 - $timePassed;
+    //                 \Log::info("Sending wait message. Time remaining: $timeRemaining minutes");
+    //                 $this->sendMessageToTelegram($chatId, "Please wait for $timeRemaining minutes before sending another same transaction.");
+    //                 return ['status' => 'success'];
+    //             }
     //         }
 
     //         $drdata = $this->checkAmount($type, $drid);
@@ -2257,7 +2296,7 @@ class MasterController extends Controller
 
     //         $drRemain = round($drdata) - round($tras_amount);
     //         $crRemain = round($crdata) + round($tras_amount);
-    //         $date = now()->format('Y-m-d');
+    //         $date = now()->format('Y-m-d H:i:s');
 
     //         \Log::info('drRemain:' . $drRemain);
     //         \Log::info('crRemain:' . $crRemain);
@@ -2276,9 +2315,8 @@ class MasterController extends Controller
     //             ];
 
     //             $insertID = DB::table($stringtable)->insertGetId($transactionData);
-
-    //             \Log::info('transactionData:' . $transactionData);
-    //             \Log::info('insertID:' . $insertID);
+    //             \Log::info('transactionData:', $transactionData);
+    //             \Log::info('insertID: ' . $insertID);
 
     //             if ($insertID) {
     //                 $srn = "{$type}_{$insertID}";
@@ -2295,14 +2333,14 @@ class MasterController extends Controller
     //         }
 
     //         $responseMessage .=
-    //             "Debit Party: *$drid*\n" .
-    //             "Credit Party: *$crid*\n" .
+    //             "Debit Party: *$msg_drparty*\n" .
+    //             "Credit Party: *$msg_crparty*\n" .
     //             "Amount: *$tras_amount*\n" .
     //             "Note: *$note*";
 
     //         $this->sendMessageToTelegram($chatId, $responseMessage);
-    //         $this->sendMessageToParty($drid, "Debit Notification:\n" . $responseMessage);
-    //         $this->sendMessageToParty($crid, "Credit Notification:\n" . $responseMessage);
+    //         $this->sendMessageToParty($msg_drparty, "Debit Notification:\n" . $responseMessage);
+    //         $this->sendMessageToParty($msg_crparty, "Credit Notification:\n" . $responseMessage);
 
     //         return ['status' => 'success'];
     //     } catch (\Exception $e) {
@@ -2315,12 +2353,288 @@ class MasterController extends Controller
     //     }
     // }
 
-    public function storeTransactionData($data)
+    // public function storeTransactionData($data)
+    // {
+    //     try {
+    //         $message = $data['message']['text'] ?? null;
+    //         $chatId = $data['message']['chat']['id'] ?? null;
+    //         $fromId = $data['message']['from']['id'] ?? null;
+
+    //         $user = DB::table('users')->where('telegram_user_id', $fromId)->first();
+    //         if (!$user) {
+    //             \Log::info("Unauthorized user: $fromId. Skipping processing.");
+    //             return;
+    //         }
+
+    //         $userId = $user->id;
+
+    //         $parts = array_map('trim', explode(',', $message, 4));
+    //         if (count($parts) < 4) {
+    //             \Log::info('Invalid message format');
+    //         }
+
+    //         $party = DB::table('party')
+    //             ->where('chat_id', $chatId)
+    //             ->select('srn', 'ac_number')
+    //             ->first();
+
+    //         $currencyType = $parts[0];
+    //         $transactionType = strtolower(substr($currencyType, 0, 2));
+    //         \Log::info($transactionType);
+    //         $type = substr($currencyType, 2);
+    //         $second_party = (float) $parts[1];
+    //         $tras_amount = (float) $parts[2];
+    //         $note = $parts[3];
+    //         $stringtable = "transaction_$type";
+
+    //         $second_party = DB::table('party')->where('ac_number', $second_party)->select('srn', 'ac_number')->first();
+
+    //         if (str_starts_with($currencyType, 'cr')) {
+    //             $crid = $party->srn;
+    //             $drid = $second_party->srn;
+    //         } else {
+    //             $drid = $party->srn;
+    //             $crid = $second_party->srn;
+    //         }
+
+    //         if ($transactionType === 'cr') {
+    //             $msg_crparty = $party->ac_number;
+    //             $msg_drparty = $second_party->ac_number;
+    //         } else {
+    //             $msg_drparty = $party->ac_number;
+    //             $msg_crparty = $second_party->ac_number;
+    //         }
+
+    //         //$msg_crparty = $party->ac_number;
+    //         //$msg_drparty = $second_party->ac_number;
+
+    //         \Log::info("Transaction Stored: Type=$type, CR=$crid, DR=$drid, Amount=$tras_amount, Note=$note");
+
+    //         \Log::info('dr_id: ' . ($drid ?? 'N/A'));
+    //         \Log::info('cr_id: ' . ($crid ?? 'N/A'));
+
+    //         $recentTransaction = DB::table($stringtable)
+    //             ->where(function ($query) use ($drid, $crid) {
+    //                 $query->where('dr_party', $drid)->where('cr_party', $crid)
+    //                     ->orWhere('dr_party', $crid)->where('cr_party', $drid);
+    //             })
+    //             ->where('amount', $tras_amount)
+    //             ->where('timest', '>=', now()->subMinutes(10)->toDateTimeString()) // Compare against full timestamp
+    //             ->first();
+
+
+    //         \Log::info('recentTransaction:', (array) $recentTransaction);
+
+    //         if ($recentTransaction) {
+    //             $transactionTime = Carbon::parse($recentTransaction->timest)->startOfMinute();
+    //             $timePassed = now()->startOfMinute()->diffInMinutes($transactionTime);
+
+    //             \Log::info($transactionTime);
+    //             \Log::info($timePassed);
+
+    //             \Log::info("Recent transaction found. Time passed: $timePassed minutes");
+
+    //             if ($timePassed < 10) {
+    //                 $timeRemaining = 10 - $timePassed;
+    //                 \Log::info("Sending wait message. Time remaining: $timeRemaining minutes");
+    //                 $this->sendMessageToTelegram($chatId, "Please wait for $timeRemaining minutes before sending another same transaction.");
+    //                 return ['status' => 'success'];
+    //             }
+    //         }
+
+
+    //         $drdata = $this->checkAmount($type, $drid);
+    //         $crdata = $this->checkAmount($type, $crid);
+
+    //         $drRemain = round($drdata) - round($tras_amount);
+    //         $crRemain = round($crdata) + round($tras_amount);
+    //         $date = now()->format('Y-m-d H:i:s');
+
+    //         \Log::info('drRemain:' . $drRemain);
+    //         \Log::info('crRemain:' . $crRemain);
+
+    //         if ($drid && $crid && $tras_amount > 0 && $note) {
+    //             $transactionData = [
+    //                 'timest' => $date,
+    //                 'user_id' => $userId,
+    //                 'dr_party' => $drid,
+    //                 'cr_party' => $crid,
+    //                 'amount' => $tras_amount,
+    //                 'note' => $note,
+    //                 'dr_party_balance' => $drRemain,
+    //                 'cr_party_balance' => $crRemain,
+    //                 'info' => ($data['trans_type'] ?? '') === 'commission' ? 5 : 0,
+    //             ];
+
+    //             $insertID = DB::table($stringtable)->insertGetId($transactionData);
+    //             \Log::info('transactionData:', $transactionData);
+    //             \Log::info('insertID: ' . $insertID);
+
+    //             if ($insertID) {
+    //                 $srn = "{$type}_{$insertID}";
+    //             }
+    //         }
+
+    //         $responseMessage =
+    //             "Date: *$date*\n";
+
+    //         if (!empty($srn) && trim($srn) !== '') {
+    //             $responseMessage .= "Srn: *$srn*\n";
+    //         } else {
+    //             $responseMessage .= "Type: *$type*\n";
+    //         }
+
+    //         $responseMessage .=
+    //             "Debit Party: *$msg_drparty*\n" .
+    //             "Credit Party: *$msg_crparty*\n" .
+    //             "Amount: *$tras_amount*\n" .
+    //             "Note: *$note*";
+
+    //         $this->sendMessageToTelegram($chatId, $responseMessage);
+    //         $this->sendMessageToParty($msg_drparty, "Debit Notification:\n" . $responseMessage);
+    //         $this->sendMessageToParty($msg_crparty, "Credit Notification:\n" . $responseMessage);
+
+    //         return ['status' => 'success'];
+    //     } catch (\Exception $e) {
+    //         \Log::error('Error in processWebhookData:', [
+    //             'message' => $e->getMessage(),
+    //             // 'file' => $e->getFile(),
+    //             // 'line' => $e->getLine(),
+    //             // 'trace' => $e->getTraceAsString(),
+    //         ]);
+    //     }
+    // }
+
+    // public function processWebhookData($data)
+    // {
+    //     try {
+    //         // $dir = resource_path('views/webhook/');
+    //         // if (!file_exists($dir)) {
+    //         //     mkdir($dir, 0777, true);
+    //         // }
+    //         // file_put_contents($dir . 'webhook_data.json', json_encode($data, JSON_PRETTY_PRINT));
+
+    //         $message = $data['message']['text'] ?? null;
+    //         $chatId = $data['message']['chat']['id'] ?? null;
+    //         $fromId = $data['message']['from']['id'] ?? null;
+
+    //         if (!$message) {
+    //             \Log::info('No message received');
+    //         }
+
+    //         $user = DB::table('users')->where('telegram_user_id', $fromId)->first();
+
+    //         if (!$user) {
+    //             \Log::info("Unauthorized user: $fromId. Skipping processing.");
+    //             return;
+    //         }
+
+    //         $userId = $user->id;
+
+    //         // Extract transaction details
+    //         $parts = array_map('trim', explode(',', $message, 5));
+    //         if (count($parts) < 5) {
+    //             \Log::info('Invalid message format');
+    //         }
+
+    //         $type = $parts[0];
+    //         $dr_party = (float) $parts[1];
+    //         $cr_party = (float) $parts[2];
+    //         $tras_amount = (float) $parts[3];
+    //         $note = $parts[4];
+    //         $stringtable = "transaction_$type";
+
+
+    //         $drid = DB::table('party')->where('ac_number', $dr_party)->value('srn') ?? '';
+    //         $crid = DB::table('party')->where('ac_number', $cr_party)->value('srn') ?? '';
+
+    //         $recentTransaction = DB::table($stringtable)
+    //             ->where('dr_party', $drid)
+    //             ->where('cr_party', $crid)
+    //             ->where('amount', $tras_amount)
+    //             ->where('timest', '>=', now()->subMinutes(10))
+    //             ->first();
+
+    //         if ($recentTransaction) {
+    //             $timeRemaining = 10 - now()->diffInMinutes($recentTransaction->timest);
+    //             $this->sendMessageToTelegram($chatId, "Please wait for $timeRemaining minutes before sending another same transaction.");
+    //             return ['status' => 'success'];
+    //         }
+
+    //         $drdata = $this->checkAmount($type, $drid);
+    //         $crdata = $this->checkAmount($type, $crid);
+
+    //         // if (is_null($drdata) || is_null($crdata)) {
+    //         //     \Log::info('Invalid debit or credit party');
+    //         //     return ['status' => 'false', 'error' => 'Invalid debit or credit party'];
+    //         // }
+
+    //         // Calculate new balances
+    //         $drRemain = round($drdata) - round($tras_amount);
+    //         $crRemain = round($crdata) + round($tras_amount);
+    //         $date = now()->format('Y-m-d');
+
+    //         if ($drid && $crid && $tras_amount > 0 && $note) {
+    //             $transactionData = [
+    //                 'timest' => $date,
+    //                 'user_id' => $userId,
+    //                 'dr_party' => $drid,
+    //                 'cr_party' => $crid,
+    //                 'amount' => $tras_amount,
+    //                 'note' => $note,
+    //                 'dr_party_balance' => $drRemain,
+    //                 'cr_party_balance' => $crRemain,
+    //                 'info' => ($data['trans_type'] ?? '') === 'commission' ? 5 : 0,
+    //             ];
+
+    //             $insertID = DB::table($stringtable)->insertGetId($transactionData);
+
+    //             if ($insertID) {
+    //                 $srn = "{$type}_{$insertID}";
+    //             }
+    //         }
+
+    //         $responseMessage =
+    //             "Date: *$date*\n";
+
+    //         if (!empty($srn) && trim($srn) !== '') {
+    //             $responseMessage .= "Srn: *$srn*\n";
+    //         } else {
+    //             $responseMessage .= "Type: *$type*\n";
+    //         }
+
+    //         $responseMessage .=
+    //             "Debit Party: *$dr_party*\n" .
+    //             "Credit Party: *$cr_party*\n" .
+    //             "Amount: *$tras_amount*\n" .
+    //             "Note: *$note*";
+
+    //         $this->sendMessageToTelegram($chatId, $responseMessage);
+    //         $this->sendMessageToParty($dr_party, "Debit Notification:\n" . $responseMessage);
+    //         $this->sendMessageToParty($cr_party, "Credit Notification:\n" . $responseMessage);
+
+    //         return ['status' => 'success'];
+    //     } catch (\Exception $e) {
+    //         \Log::error('Error in processWebhookData:', [
+    //             'message' => $e->getMessage(),
+    //             // 'file' => $e->getFile(),
+    //             // 'line' => $e->getLine(),
+    //             // 'trace' => $e->getTraceAsString(),
+    //         ]);
+    //     }
+    // }
+
+    public function handleTransaction($data, $isWebhook = false)
     {
         try {
             $message = $data['message']['text'] ?? null;
             $chatId = $data['message']['chat']['id'] ?? null;
             $fromId = $data['message']['from']['id'] ?? null;
+
+            if (!$message) {
+                \Log::info('No message received');
+                return;
+            }
 
             $user = DB::table('users')->where('telegram_user_id', $fromId)->first();
             if (!$user) {
@@ -2330,41 +2644,50 @@ class MasterController extends Controller
 
             $userId = $user->id;
 
-            $parts = array_map('trim', explode(',', $message, 4));
-            if (count($parts) < 4) {
+            $parts = $isWebhook ? array_map('trim', explode(',', $message, 5)) : array_map('trim', explode(',', $message, 4));
+            if (count($parts) < ($isWebhook ? 5 : 4)) {
                 \Log::info('Invalid message format');
+                return;
             }
 
-            $party = DB::table('party')
-                ->where('chat_id', $chatId)
-                ->select('srn','ac_number')
-                ->first();
+            if ($isWebhook) {
+                $type = $parts[0];
+                $dr_party = (float) $parts[1];
+                $cr_party = (float) $parts[2];
+                $tras_amount = (float) $parts[3];
+                $note = $parts[4];
+                $drid = DB::table('party')->where('ac_number', $dr_party)->value('srn') ?? null;
+                $crid = DB::table('party')->where('ac_number', $cr_party)->value('srn') ?? null;
 
-        
-            $currencyType = $parts[0];
-            $type = substr($currencyType, 2);
-            $second_party = (float) $parts[1];
-            $tras_amount = (float) $parts[2];
-            $note = $parts[3];
-            $stringtable = "transaction_$type";
-
-            $second_party = DB::table('party')->where('ac_number', $second_party)->select('srn','ac_number')->first();
-
-            if (str_starts_with($currencyType, 'cr')) {
-                $crid = $party->srn;
-                $drid = $second_party->srn;
+                if (!$drid || !$crid) {
+                    \Log::error('One of the parties is missing.');
+                    return;
+                }
             } else {
-                $drid = $party->srn;
-                $crid = $second_party->srn;
+                $currencyType = $parts[0];
+                $transactionType = strtolower(substr($currencyType, 0, 2));
+                $type = substr($currencyType, 2);
+                $second_party = (float) $parts[1];
+                $tras_amount = (float) $parts[2];
+                $note = $parts[3];
+
+                $party = DB::table('party')->where('chat_id', $chatId)->select('srn', 'ac_number')->first();
+                $second_party = DB::table('party')->where('ac_number', $second_party)->select('srn', 'ac_number')->first();
+
+                if (!$party || !$second_party) {
+                    \Log::error('One of the parties is missing.');
+                    return;
+                }
+
+                $drid = ($transactionType === 'cr') ? $second_party->srn : $party->srn;
+                $crid = ($transactionType === 'cr') ? $party->srn : $second_party->srn;
+
+                $dr_party = $party->ac_number;
+                $cr_party = $second_party->ac_number;
             }
 
-            $msg_crparty = $party->ac_number;
-            $msg_drparty = $second_party->ac_number;
-
+            $stringtable = "transaction_$type";
             \Log::info("Transaction Stored: Type=$type, CR=$crid, DR=$drid, Amount=$tras_amount, Note=$note");
-
-            \Log::info('dr_id: ' . ($drid ?? 'N/A'));
-            \Log::info('cr_id: ' . ($crid ?? 'N/A'));
 
             $recentTransaction = DB::table($stringtable)
                 ->where(function ($query) use ($drid, $crid) {
@@ -2372,21 +2695,11 @@ class MasterController extends Controller
                         ->orWhere('dr_party', $crid)->where('cr_party', $drid);
                 })
                 ->where('amount', $tras_amount)
-                ->where('timest', '>=', now()->subMinutes(10)->toDateTimeString()) 
+                ->where('timest', '>=', now()->subMinutes(10))
                 ->first();
 
-
-            \Log::info('recentTransaction:', (array) $recentTransaction);
-
             if ($recentTransaction) {
-                $transactionTime = Carbon::parse($recentTransaction->timest)->startOfMinute();
-                $timePassed = now()->startOfMinute()->diffInMinutes($transactionTime);
-
-                \Log::info($transactionTime);
-                \Log::info($timePassed);
-
-                \Log::info("Recent transaction found. Time passed: $timePassed minutes");
-
+                $timePassed = now()->diffInMinutes(Carbon::parse($recentTransaction->timest));
                 if ($timePassed < 10) {
                     $timeRemaining = 10 - $timePassed;
                     \Log::info("Sending wait message. Time remaining: $timeRemaining minutes");
@@ -2397,13 +2710,9 @@ class MasterController extends Controller
 
             $drdata = $this->checkAmount($type, $drid);
             $crdata = $this->checkAmount($type, $crid);
-
             $drRemain = round($drdata) - round($tras_amount);
             $crRemain = round($crdata) + round($tras_amount);
             $date = now()->format('Y-m-d H:i:s');
-
-            \Log::info('drRemain:' . $drRemain);
-            \Log::info('crRemain:' . $crRemain);
 
             if ($drid && $crid && $tras_amount > 0 && $note) {
                 $transactionData = [
@@ -2422,158 +2731,36 @@ class MasterController extends Controller
                 \Log::info('transactionData:', $transactionData);
                 \Log::info('insertID: ' . $insertID);
 
-                if ($insertID) {
-                    $srn = "{$type}_{$insertID}";
-                }
+                $srn = $insertID ? "{$type}_{$insertID}" : '';
+
+                $responseMessage = "Date: *$date*\n";
+                $responseMessage .= $srn ? "Srn: *$srn*\n" : "Type: *$type*\n";
+                $responseMessage .= "Debit Party: *$dr_party*\nCredit Party: *$cr_party*\nAmount: *$tras_amount*\nNote: *$note*";
+
+                $this->sendMessageToTelegram($chatId, $responseMessage);
+                $this->sendMessageToParty($dr_party, "Debit Notification:\n" . $responseMessage);
+                $this->sendMessageToParty($cr_party, "Credit Notification:\n" . $responseMessage);
+
+                return ['status' => 'success'];
             }
-
-            $responseMessage =
-                "Date: *$date*\n";
-
-            if (!empty($srn) && trim($srn) !== '') {
-                $responseMessage .= "Srn: *$srn*\n";
-            } else {
-                $responseMessage .= "Type: *$type*\n";
-            }
-
-            $responseMessage .=
-                "Debit Party: *$msg_drparty*\n" .
-                "Credit Party: *$msg_crparty*\n" .
-                "Amount: *$tras_amount*\n" .
-                "Note: *$note*";
-
-            $this->sendMessageToTelegram($chatId, $responseMessage);
-            $this->sendMessageToParty($msg_drparty, "Debit Notification:\n" . $responseMessage);
-            $this->sendMessageToParty($msg_crparty, "Credit Notification:\n" . $responseMessage);
-
-            return ['status' => 'success'];
         } catch (\Exception $e) {
-            \Log::error('Error in processWebhookData:', [
+            \Log::error('Error in handleTransaction:', [
                 'message' => $e->getMessage(),
-                // 'file' => $e->getFile(),
-                // 'line' => $e->getLine(),
-                // 'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
             ]);
         }
     }
 
+    public function storeTransactionData($data)
+    {
+        return $this->handleTransaction($data, false);
+    }
+
     public function processWebhookData($data)
     {
-        try {
-            // $dir = resource_path('views/webhook/');
-            // if (!file_exists($dir)) {
-            //     mkdir($dir, 0777, true);
-            // }
-            // file_put_contents($dir . 'webhook_data.json', json_encode($data, JSON_PRETTY_PRINT));
-
-            $message = $data['message']['text'] ?? null;
-            $chatId = $data['message']['chat']['id'] ?? null;
-            $fromId = $data['message']['from']['id'] ?? null;
-
-            if (!$message) {
-                \Log::info('No message received');
-            }
-
-            $user = DB::table('users')->where('telegram_user_id', $fromId)->first();
-
-            if (!$user) {
-                \Log::info("Unauthorized user: $fromId. Skipping processing.");
-                return;
-            }
-
-            $userId = $user->id;
-
-            // Extract transaction details
-            $parts = array_map('trim', explode(',', $message, 5));
-            if (count($parts) < 5) {
-                \Log::info('Invalid message format');
-            }
-
-            $type = $parts[0];
-            $dr_party = (float) $parts[1];
-            $cr_party = (float) $parts[2];
-            $tras_amount = (float) $parts[3];
-            $note = $parts[4];
-            $stringtable = "transaction_$type";
-
-
-            $drid = DB::table('party')->where('ac_number', $dr_party)->value('srn') ?? '';
-            $crid = DB::table('party')->where('ac_number', $cr_party)->value('srn') ?? '';
-
-            $recentTransaction = DB::table($stringtable)
-                ->where('dr_party', $drid)
-                ->where('cr_party', $crid)
-                ->where('amount', $tras_amount)
-                ->where('timest', '>=', now()->subMinutes(10))
-                ->first();
-
-            if ($recentTransaction) {
-                $timeRemaining = 10 - now()->diffInMinutes($recentTransaction->timest);
-                $this->sendMessageToTelegram($chatId, "Please wait for $timeRemaining minutes before sending another same transaction.");
-                return ['status' => 'success'];
-            }
-
-            $drdata = $this->checkAmount($type, $drid);
-            $crdata = $this->checkAmount($type, $crid);
-
-            // if (is_null($drdata) || is_null($crdata)) {
-            //     \Log::info('Invalid debit or credit party');
-            //     return ['status' => 'false', 'error' => 'Invalid debit or credit party'];
-            // }
-
-            // Calculate new balances
-            $drRemain = round($drdata) - round($tras_amount);
-            $crRemain = round($crdata) + round($tras_amount);
-            $date = now()->format('Y-m-d');
-
-            if ($drid && $crid && $tras_amount > 0 && $note) {
-                $transactionData = [
-                    'timest' => $date,
-                    'user_id' => $userId,
-                    'dr_party' => $drid,
-                    'cr_party' => $crid,
-                    'amount' => $tras_amount,
-                    'note' => $note,
-                    'dr_party_balance' => $drRemain,
-                    'cr_party_balance' => $crRemain,
-                    'info' => ($data['trans_type'] ?? '') === 'commission' ? 5 : 0,
-                ];
-
-                $insertID = DB::table($stringtable)->insertGetId($transactionData);
-
-                if ($insertID) {
-                    $srn = "{$type}_{$insertID}";
-                }
-            }
-
-            $responseMessage =
-                "Date: *$date*\n";
-
-            if (!empty($srn) && trim($srn) !== '') {
-                $responseMessage .= "Srn: *$srn*\n";
-            } else {
-                $responseMessage .= "Type: *$type*\n";
-            }
-
-            $responseMessage .=
-                "Debit Party: *$dr_party*\n" .
-                "Credit Party: *$cr_party*\n" .
-                "Amount: *$tras_amount*\n" .
-                "Note: *$note*";
-
-            $this->sendMessageToTelegram($chatId, $responseMessage);
-            $this->sendMessageToParty($dr_party, "Debit Notification:\n" . $responseMessage);
-            $this->sendMessageToParty($cr_party, "Credit Notification:\n" . $responseMessage);
-
-            return ['status' => 'success'];
-        } catch (\Exception $e) {
-            \Log::error('Error in processWebhookData:', [
-                'message' => $e->getMessage(),
-                // 'file' => $e->getFile(),
-                // 'line' => $e->getLine(),
-                // 'trace' => $e->getTraceAsString(),
-            ]);
-        }
+        return $this->handleTransaction($data, true);
     }
 
     public function storeWebhookData($data)
@@ -2585,66 +2772,105 @@ class MasterController extends Controller
             \Log::info("message data");
             \Log::info($message);
 
-            // if (!empty($chatId) && !empty($message) && !empty($rawData)) {
-            //     DB::table('webhook_data')->insert([
-            //         'chat_id' => $chatId,
-            //         'message' => $message,
-            //         'data' => $rawData,
-            //         'created_at' => now(),
-            //     ]);
+            if (!empty($chatId) && !empty($message) && !empty($rawData)) {
+                DB::table('webhook_data')->insert([
+                    'chat_id' => $chatId,
+                    'message' => $message,
+                    'data' => $rawData,
+                    'created_at' => now(),
+                ]);
 
-            //     \Log::info('Webhook data stored successfully.');
-            //     return true;
-            // }
-
-            // if (empty($chatId) || empty($message) || empty($rawData)) {
-            //     \Log::info('Webhook data skipped: Missing required fields.');
-            //     return false;
-            // }
-
-            // $parts = array_map('trim', explode(',', $message, 5));
-            // if (count($parts) < 5) {
-            //     \Log::info('Webhook data skipped: Invalid message format.');
-            //     return false;
-            // }
-            $parts = array_map('trim', explode(',', $message, 5));
-            if (count($parts) >= 5) {
-                $recentEntry = DB::table('webhook_data')
-                    ->where('chat_id', $chatId)
-                    ->where('message', $message)
-                    ->where('created_at', '>=', now()->subMinutes(10))
-                    ->orderBy('created_at', 'desc')
-                    ->first();
-
-                if ($recentEntry) {
-                    $timeElapsed = now()->diffInMinutes($recentEntry->created_at);
-                    $timeRemaining = 10 - $timeElapsed;
-
-                    \Log::info("Duplicate webhook data blocked. Please wait for $timeRemaining minutes.");
-                    return true;
-                }
+                \Log::info('Webhook data stored successfully.');
+                return true;
             }
-
-            DB::table('webhook_data')->insert([
-                'chat_id' => $chatId,
-                'message' => $message,
-                'data' => $rawData,
-                'created_at' => now(),
-            ]);
-
-            \Log::info('Webhook data stored successfully.');
-            return true;
         } catch (\Exception $e) {
             \Log::error('Error storing webhook data', ['error' => $e->getMessage()]);
         }
     }
+
+    public function getInfoByName($data, $chatId)
+    {
+        try {
+            $party = DB::table('party')->where('party_name', 'LIKE', '%' . $data . '%')->get();
+
+            if ($party->isNotEmpty()) {
+                foreach ($party as $item) {
+                    $message = "Found party:\n";
+                    $message .= "*Party Name:* " . $this->escapeMarkdown($item->party_name) . "\n";
+                    $message .= "*Account Number:* " . $this->escapeMarkdown($item->ac_number) . "\n";
+
+                    $this->sendMessageToTelegram($chatId, $message);
+
+                    \Log::info('Found party: ', ['party_name' => $item->party_name, 'account_number' => $item->ac_number]);
+                }
+            } else {
+                $message = "No matching party found for name: " . $data;
+                $this->sendMessageToTelegram($chatId, $message);
+                \Log::info('No matching party found for name: ' . $data);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error fetching balance:', ['message' => $e->getMessage()]);
+        }
+    }
+
+    public function escapeMarkdown($text)
+    {
+        return str_replace(
+            ['*', '_', '`', '[', ']', '(', ')', '~', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!', ':'],
+            ['\*', '\_', '\`', '\[', '\]', '\(', '\)', '\~', '\>', '\#', '\+', '\-', '\=', '\|', '\{', '\}', '\.', '\!', '\:'],
+            $text
+        );
+    }
+
+    // public function storeWebhookData($data)
+    // {
+    //     try {
+    //         $chatId = $data['message']['chat']['id'] ?? null;
+    //         $message = $data['message']['text'] ?? null;
+    //         $rawData = json_encode($data);
+    //         \Log::info("message data");
+    //         \Log::info($message);
+
+    //         $parts4 = array_map('trim', explode(',', $message, 4));
+    //         $parts5 = array_map('trim', explode(',', $message, 5));
+
+    //         if (count($parts5) === 5 || count($parts4) === 4) {
+    //             $recentEntry = DB::table('webhook_data')
+    //                 ->where('chat_id', $chatId)
+    //                 ->where('message', $message)
+    //                 ->where('created_at', '>=', now()->subMinutes(10))
+    //                 ->orderBy('created_at', 'desc')
+    //                 ->first();
+
+    //             if ($recentEntry) {
+    //                 $timeElapsed = now()->diffInMinutes($recentEntry->created_at);
+    //                 $timeRemaining = 10 - $timeElapsed;
+
+    //                 \Log::info("Duplicate webhook data blocked. Please wait for $timeRemaining minutes.");
+    //                 return true;
+    //             }
+
+    //             DB::table('webhook_data')->insert([
+    //                 'chat_id'   => $chatId,
+    //                 'message'   => $message,
+    //                 'data'      => $rawData,
+    //                 'created_at' => now(),
+    //             ]);
+
+    //             \Log::info('Webhook data stored successfully.');
+    //         }
+    //         return true;
+    //     } catch (\Exception $e) {
+    //         \Log::error('Error storing webhook data', ['error' => $e->getMessage()]);
+    //     }
+    // }
 
     public function getBalanceByChatId($chatId)
     {
         try {
             $party = DB::table('party')
                 ->where('chat_id', $chatId)
-                ->select('srn')
+                ->select('srn', 'ac_number')
                 ->first();
 
 
@@ -2654,7 +2880,7 @@ class MasterController extends Controller
             }
 
             $stringtable = config('global.transction_type_list');
-            $balanceMessage = "*Your Balance:*\n";
+            $balanceMessage = "*Account $party->ac_number All Currency Balance:*\n";
             $hasBalance = false;
 
             foreach ($stringtable as $table_type) {
@@ -2679,6 +2905,11 @@ class MasterController extends Controller
                         $balanceMessage .= "*{$table_type}:*   {$balance}\n";
                         $hasBalance = true;
                     }
+
+                    if ($balance == 0) {
+                        $balanceMessage .= "*Your account balance is 0*\n";
+                        $hasBalance = true;
+                    }
                 }
             }
             \Log::info("balance");
@@ -2686,11 +2917,12 @@ class MasterController extends Controller
             if ($hasBalance) {
                 $this->sendMessageToTelegram($chatId, $balanceMessage);
             } else {
-                $this->sendMessageToTelegram($chatId, "No available balance found.");
+                $balanceMessage = "*Account $party->ac_number All Currency Balance 0*\n";
+                $this->sendMessageToTelegram($chatId, $balanceMessage);
             }
         } catch (\Exception $e) {
             \Log::error('Error fetching balance:', ['message' => $e->getMessage()]);
-            $this->sendMessageToTelegram($chatId, "⚠️ Error fetching balance. Please try again.");
+            $this->sendMessageToTelegram($chatId, "Error fetching balance. Please try again.");
         }
     }
 
